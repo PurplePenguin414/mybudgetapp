@@ -23,6 +23,6 @@
   background: var(--surface);
 }
 .topnav-item:hover { background: var(--surface2); }
-.topnav-item.active { background: var(--text); color: #fff; border-color: var(--text); }
+.topnav-item.active { background: var(--blue); color: #fff; border-color: var(--blue); }
 .topnav-icon { font-size: 14px; }
 .topnav-theme-toggle { margin-left: auto; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 12px; }
