@@ -227,6 +227,7 @@ function renderExpensePie(sorted) {
   }
   const total = sorted.reduce((s, [, amt]) => s + amt, 0);
   const ctx = canvas.getContext('2d');
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   if (state.pieChart) state.pieChart.destroy();
   state.pieChart = new Chart(ctx, {
     type: 'pie',
@@ -234,13 +235,15 @@ function renderExpensePie(sorted) {
       labels: sorted.map(([name, amt]) => `${name} (${((amt / total) * 100).toFixed(0)}%)`),
       datasets: [{
         data: sorted.map(([, amt]) => amt),
-        backgroundColor: sorted.map((_, i) => PIE_COLORS[i % PIE_COLORS.length])
+        backgroundColor: sorted.map((_, i) => PIE_COLORS[i % PIE_COLORS.length]),
+        borderColor: '#000000',
+        borderWidth: 1
       }]
     },
     options: {
       responsive: true,
       plugins: {
-        legend: { position: 'right', labels: { boxWidth: 12, font: { family: 'DM Sans', size: 11 } } },
+        legend: { position: 'right', labels: { boxWidth: 12, font: { family: 'DM Sans', size: 11 }, color: isDark ? '#ffffff' : undefined } },
         tooltip: {
           callbacks: {
             label: (ctx) => `${ctx.label.split(' (')[0]}: ${fmt(ctx.raw)} (${((ctx.raw / total) * 100).toFixed(0)}%)`
