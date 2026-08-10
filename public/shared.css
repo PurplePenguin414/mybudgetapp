@@ -26,3 +26,13 @@
 .topnav-item.active { background: var(--blue); color: #fff; border-color: var(--blue); }
 .topnav-icon { font-size: 14px; }
 .topnav-theme-toggle { margin-left: auto; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 12px; }
+
+/* Every page defines input/select/textarea backgrounds but not text color,
+   so browsers fall back to black text — invisible against a dark background. */
+input, select, textarea {
+  color: var(--text);
+}
+input::placeholder, textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
