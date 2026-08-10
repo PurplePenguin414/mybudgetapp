@@ -9,6 +9,7 @@ const fs = require('fs');
 const PORT = process.env.PORT || 3000;
 const APP_PASSWORD_HASH = process.env.APP_PASSWORD_HASH;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
+const WIDGET_API_KEY = process.env.WIDGET_API_KEY || null;
 
 if (!fs.existsSync(path.join(__dirname, 'data'))) {
   fs.mkdirSync(path.join(__dirname, 'data'));
@@ -265,6 +266,14 @@ app.use(
 function requireAuth(req, res, next) {
   if (req.session && req.session.loggedIn) return next();
   return res.status(401).json({ error: 'Not authenticated' });
+}
+
+// Separate, simpler auth for the mobile widget endpoint — a static API key
+// passed as a query param, since a widget can't hold a browser session cookie.
+function requireWidgetKey(req, res, next) {
+  if (!WIDGET_API_KEY) return res.status(500).json({ error: 'Widget not configured: WIDGET_API_KEY missing' });
+  if (req.query.key !== WIDGET_API_KEY) return res.status(401).json({ error: 'Invalid or missing key' });
+  return next();
 }
 
 // ---------- Auth routes ----------
@@ -986,6 +995,76 @@ app.patch('/api/bills/:id/charged', requireAuth, (req, res) => {
 app.delete('/api/bills/:id', requireAuth, (req, res) => {
   db.prepare('DELETE FROM bills WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
+});
+
+// ---------- Mobile widget summary (current month, basic info) ----------
+app.get('/api/widget/summary', requireWidgetKey, (req, res) => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+
+  const entries = db
+    .prepare(
+      `SELECT e.amount, c.kind, c.budget_bucket
+       FROM entries e JOIN categories c ON c.id = e.category_id
+       WHERE e.year = ? AND e.month = ?`
+    )
+    .all(year, month);
+
+  const income = entries.filter((e) => e.kind === 'income').reduce((s, e) => s + e.amount, 0);
+  const expense = entries.filter((e) => e.kind === 'expense').reduce((s, e) => s + e.amount, 0);
+  const net = income - expense;
+  const savingsBucketAmt = entries
+    .filter((e) => e.kind === 'expense' && e.budget_bucket === 'savings')
+    .reduce((s, e) => s + e.amount, 0);
+  const savingsRate = income > 0 ? Math.round(((net + savingsBucketAmt) / income) * 100) : 0;
+
+  const targetRows = db
+    .prepare(
+      `SELECT c.id AS category_id, c.name AS category_name, t.amount AS target
+       FROM categories c
+       LEFT JOIN targets t ON t.category_id = c.id AND t.year = ? AND t.month = ?
+       WHERE c.kind = 'expense' AND t.amount IS NOT NULL`
+    )
+    .all(year, month);
+
+  const actualByCategory = {};
+  db.prepare(
+    `SELECT c.id AS category_id, SUM(e.amount) AS total
+     FROM entries e JOIN categories c ON c.id = e.category_id
+     WHERE e.year = ? AND e.month = ? AND c.kind = 'expense'
+     GROUP BY c.id`
+  )
+    .all(year, month)
+    .forEach((r) => { actualByCategory[r.category_id] = r.total; });
+
+  const needsAttention = [];
+  targetRows.forEach((t) => {
+    const actual = actualByCategory[t.category_id] || 0;
+    const pct = t.target > 0 ? (actual / t.target) * 100 : 0;
+    if (pct > 100) {
+      needsAttention.push({ name: t.category_name, status: 'over', actual, target: t.target, pct: Math.round(pct) });
+    } else if (pct >= 90) {
+      needsAttention.push({ name: t.category_name, status: 'near', actual, target: t.target, pct: Math.round(pct) });
+    }
+  });
+  needsAttention.sort((a, b) => b.pct - a.pct);
+
+  const counts = {
+    over_target: needsAttention.filter((n) => n.status === 'over').length,
+    near_target: needsAttention.filter((n) => n.status === 'near').length
+  };
+
+  res.json({
+    year,
+    month,
+    income,
+    expense,
+    net,
+    savingsRate,
+    counts,
+    needs_attention: needsAttention
+  });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
