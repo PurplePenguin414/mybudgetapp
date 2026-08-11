@@ -1067,6 +1067,53 @@ app.get('/api/widget/summary', requireWidgetKey, (req, res) => {
   });
 });
 
+// ---------- Mobile widget: average monthly budget ----------
+app.get('/api/widget/averages', requireWidgetKey, (req, res) => {
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+
+  const monthRows = db
+    .prepare('SELECT DISTINCT year, month FROM entries WHERE NOT (year = ? AND month = ?)')
+    .all(curYear, curMonth);
+  const monthCount = monthRows.length;
+
+  if (monthCount === 0) {
+    return res.json({ monthCount: 0, avgIncome: 0, avgExpense: 0, avgNet: 0, topCategories: [] });
+  }
+
+  const catTotals = db
+    .prepare(
+      `SELECT c.name, c.kind, SUM(e.amount) AS total
+       FROM entries e JOIN categories c ON c.id = e.category_id
+       WHERE NOT (e.year = ? AND e.month = ?)
+       GROUP BY c.name, c.kind
+       ORDER BY total DESC`
+    )
+    .all(curYear, curMonth);
+
+  let totalIncome = 0;
+  let totalExpense = 0;
+  const expenseCategories = [];
+  catTotals.forEach((r) => {
+    if (r.kind === 'income') {
+      totalIncome += r.total;
+    } else {
+      totalExpense += r.total;
+      expenseCategories.push({ name: r.name, avg: r.total / monthCount });
+    }
+  });
+  expenseCategories.sort((a, b) => b.avg - a.avg);
+
+  res.json({
+    monthCount,
+    avgIncome: totalIncome / monthCount,
+    avgExpense: totalExpense / monthCount,
+    avgNet: (totalIncome - totalExpense) / monthCount,
+    topCategories: expenseCategories.slice(0, 6)
+  });
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.listen(PORT, () => {
