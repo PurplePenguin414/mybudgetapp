@@ -1110,7 +1110,7 @@ app.get('/api/widget/averages', requireWidgetKey, (req, res) => {
     avgIncome: totalIncome / monthCount,
     avgExpense: totalExpense / monthCount,
     avgNet: (totalIncome - totalExpense) / monthCount,
-    topCategories: expenseCategories.slice(0, 6)
+    topCategories: expenseCategories.slice(0, 10)
   });
 });
 
