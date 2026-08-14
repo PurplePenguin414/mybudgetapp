@@ -48,7 +48,7 @@ async function createWidget(data) {
   const w = new ListWidget();
   w.backgroundColor = new Color("#000000");
   w.url = WIDGET_URL.replace("/api/widget/averages", "/averages.html");
-  w.setPadding(isLarge ? 22 : 16, isLarge ? 20 : 16, isLarge ? 22 : 16, isLarge ? 20 : 16);
+  w.setPadding(isLarge ? 26 : 20, isLarge ? 18 : 14, isLarge ? 26 : 20, isLarge ? 18 : 14);
 
   if (data.error) {
     const t = w.addText("Couldn't load Avg Budget");
