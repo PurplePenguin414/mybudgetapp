@@ -48,7 +48,7 @@ async function createWidget(data) {
   const w = new ListWidget();
   w.backgroundColor = new Color("#000000");
   w.url = WIDGET_URL.replace("/api/widget/averages", "/averages.html");
-  w.setPadding(isLarge ? 26 : 20, isLarge ? 18 : 14, isLarge ? 26 : 20, isLarge ? 18 : 14);
+  w.setPadding(isLarge ? 16 : 14, isLarge ? 18 : 14, isLarge ? 16 : 14, isLarge ? 18 : 14);
 
   if (data.error) {
     const t = w.addText("Couldn't load Avg Budget");
@@ -60,7 +60,7 @@ async function createWidget(data) {
   const title = w.addText("📊 Avg Budget");
   title.font = Font.boldSystemFont(isLarge ? 18 : 15);
   title.textColor = new Color("#ffffff");
-  w.addSpacer(isLarge ? 6 : 4);
+  w.addSpacer(isLarge ? 4 : 4);
 
   if (data.monthCount === 0) {
     w.addSpacer(6);
@@ -73,7 +73,7 @@ async function createWidget(data) {
   const subtitle = w.addText(`across ${data.monthCount} month${data.monthCount === 1 ? "" : "s"}`);
   subtitle.font = Font.systemFont(isLarge ? 12 : 10);
   subtitle.textColor = new Color("#8a8a8a");
-  w.addSpacer(isLarge ? 10 : 6);
+  w.addSpacer(isLarge ? 6 : 6);
 
   // NOTE: server response is nested under "totals" (avgIncome/avgExpense/avgNet)
   // and doesn't include a flat "topCategories" field — it returns an "expense"
@@ -97,7 +97,7 @@ async function createWidget(data) {
   inOut.font = Font.systemFont(isLarge ? 12 : 10);
   inOut.textColor = new Color("#c7c7c7");
 
-  w.addSpacer(isLarge ? 14 : 8);
+  w.addSpacer(isLarge ? 8 : 8);
 
   if (topCategories.length === 0) {
     const none = w.addText("No expenses logged yet");
@@ -128,7 +128,7 @@ async function createWidget(data) {
       amt.textColor = new Color("#c7c7c7");
       amt.rightAlignText();
 
-      w.addSpacer(isLarge ? 8 : 3);
+      w.addSpacer(isLarge ? 4 : 3);
     }
 
     if (topCategories.length > shown.length) {
