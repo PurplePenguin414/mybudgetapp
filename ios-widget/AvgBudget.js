@@ -68,26 +68,35 @@ async function createWidget(data) {
   subtitle.textColor = new Color("#8a8a8a");
   w.addSpacer(6);
 
+  // NOTE: the server nests these under "totals", not top-level.
   const netRow = w.addStack();
   netRow.layoutHorizontally();
   netRow.centerAlignContent();
-  const netLabel = netRow.addText(`Net: ${fmt(data.avgNet)}/mo`);
+  const netLabel = netRow.addText(`Net: ${fmt(data.totals.avgNet)}/mo`);
   netLabel.font = Font.mediumSystemFont(12);
-  netLabel.textColor = data.avgNet >= 0 ? new Color("#3f8f5f") : new Color("#b8483c");
+  netLabel.textColor = data.totals.avgNet >= 0 ? new Color("#3f8f5f") : new Color("#b8483c");
   netRow.addSpacer(6);
-  const inOut = netRow.addText(`${fmt(data.avgIncome)} in · ${fmt(data.avgExpense)} out`);
+  const inOut = netRow.addText(`${fmt(data.totals.avgIncome)} in · ${fmt(data.totals.avgExpense)} out`);
   inOut.font = Font.systemFont(10);
   inOut.textColor = new Color("#c7c7c7");
-
   w.addSpacer(8);
 
-  if (data.topCategories.length === 0) {
+  // NOTE: the server returns an "expense" array (each with category/avg/bucket),
+  // not a "topCategories" field — build the top-5 list from it here, sorted
+  // by average monthly cost descending (the server already sorts this way,
+  // but we re-slice defensively in case that changes).
+  const topCategories = [...data.expense]
+    .sort((a, b) => b.avg - a.avg)
+    .slice(0, 5)
+    .map((e) => ({ name: e.category, avg: e.avg }));
+
+  if (topCategories.length === 0) {
     const none = w.addText("No expenses logged yet");
     none.font = Font.systemFont(12);
     none.textColor = new Color("#c7c7c7");
   } else {
-    for (let i = 0; i < data.topCategories.length; i++) {
-      const cat = data.topCategories[i];
+    for (let i = 0; i < topCategories.length; i++) {
+      const cat = topCategories[i];
       const row = w.addStack();
       row.layoutHorizontally();
       row.centerAlignContent();
