@@ -131,6 +131,6 @@ const widget = await createWidget(data);
 if (config.runsInWidget) {
   Script.setWidget(widget);
 } else {
-  await widget.presentMedium();
+  await widget.presentLarge();
 }
 Script.complete();
