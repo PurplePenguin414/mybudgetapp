@@ -7,20 +7,23 @@
 //    (WIDGET_KEY is the same WIDGET_API_KEY used by the main Budget widget.)
 // 3. Tap the wrench icon (bottom right) > run once to test.
 // 4. Long-press your iPhone home screen > tap + (top left) > search "Scriptable"
-//    > choose the medium widget size > add it.
+//    > choose the Large widget size > add it.
 // 5. Long-press the new widget > Edit Widget > set "Script" to this script's name.
 //
 // Shows your average monthly income/expenses/net, and your top spending
 // categories by average monthly cost (the current in-progress month is
 // excluded so it doesn't skew the numbers, same as the Averages page).
+// Adapts to whatever widget size you place it at (Small/Medium/Large).
 
 const WIDGET_URL = "https://budget.megangibbs.net/api/widget/averages";
 const WIDGET_KEY = "PASTE_YOUR_WIDGET_API_KEY_HERE";
 
 // Same palette as the pie chart on the Averages page, so the colored dots
-// here line up with what you'd see on the web app.
+// here line up with what you'd see on the web app. 10 colors to cover the
+// full category list on Large.
 const PIE_COLORS = [
-  "#2761a0", "#c94235", "#2a8a5f", "#b87318", "#7a5ea8", "#c9598a"
+  "#2761a0", "#c94235", "#2a8a5f", "#b87318", "#7a5ea8", "#c9598a",
+  "#4a9d9c", "#9a8a3a", "#a05e27", "#6a7a3a"
 ];
 
 async function getData() {
@@ -38,10 +41,14 @@ function fmt(n) {
 }
 
 async function createWidget(data) {
+  const family = config.widgetFamily || "large";
+  const isLarge = family === "large";
+  const maxCategories = family === "small" ? 3 : family === "medium" ? 5 : 10;
+
   const w = new ListWidget();
   w.backgroundColor = new Color("#000000");
   w.url = WIDGET_URL.replace("/api/widget/averages", "/averages.html");
-  w.setPadding(14, 14, 14, 14);
+  w.setPadding(isLarge ? 18 : 14, isLarge ? 18 : 14, isLarge ? 18 : 14, isLarge ? 18 : 14);
 
   if (data.error) {
     const t = w.addText("Couldn't load Avg Budget");
@@ -51,9 +58,9 @@ async function createWidget(data) {
   }
 
   const title = w.addText("📊 Avg Budget");
-  title.font = Font.boldSystemFont(15);
+  title.font = Font.boldSystemFont(isLarge ? 18 : 15);
   title.textColor = new Color("#ffffff");
-  w.addSpacer(4);
+  w.addSpacer(isLarge ? 6 : 4);
 
   if (data.monthCount === 0) {
     w.addSpacer(6);
@@ -64,61 +71,71 @@ async function createWidget(data) {
   }
 
   const subtitle = w.addText(`across ${data.monthCount} month${data.monthCount === 1 ? "" : "s"}`);
-  subtitle.font = Font.systemFont(10);
+  subtitle.font = Font.systemFont(isLarge ? 12 : 10);
   subtitle.textColor = new Color("#8a8a8a");
-  w.addSpacer(6);
+  w.addSpacer(isLarge ? 10 : 6);
 
-  // NOTE: the server nests these under "totals", not top-level.
+  // NOTE: server response is nested under "totals" (avgIncome/avgExpense/avgNet)
+  // and doesn't include a flat "topCategories" field — it returns an "expense"
+  // array (category/avg/bucket) instead. Both are normalized here so the
+  // rest of the layout logic below can stay exactly as originally written.
+  const avgNet = data.totals ? data.totals.avgNet : data.avgNet;
+  const avgIncome = data.totals ? data.totals.avgIncome : data.avgIncome;
+  const avgExpense = data.totals ? data.totals.avgExpense : data.avgExpense;
+  const topCategories = data.topCategories
+    ? data.topCategories
+    : [...(data.expense || [])].sort((a, b) => b.avg - a.avg).map((e) => ({ name: e.category, avg: e.avg }));
+
   const netRow = w.addStack();
   netRow.layoutHorizontally();
   netRow.centerAlignContent();
-  const netLabel = netRow.addText(`Net: ${fmt(data.totals.avgNet)}/mo`);
-  netLabel.font = Font.mediumSystemFont(12);
-  netLabel.textColor = data.totals.avgNet >= 0 ? new Color("#3f8f5f") : new Color("#b8483c");
-  netRow.addSpacer(6);
-  const inOut = netRow.addText(`${fmt(data.totals.avgIncome)} in · ${fmt(data.totals.avgExpense)} out`);
-  inOut.font = Font.systemFont(10);
+  const netLabel = netRow.addText(`Net: ${fmt(avgNet)}/mo`);
+  netLabel.font = Font.mediumSystemFont(isLarge ? 15 : 12);
+  netLabel.textColor = avgNet >= 0 ? new Color("#3f8f5f") : new Color("#b8483c");
+  netRow.addSpacer(8);
+  const inOut = netRow.addText(`${fmt(avgIncome)} in · ${fmt(avgExpense)} out`);
+  inOut.font = Font.systemFont(isLarge ? 12 : 10);
   inOut.textColor = new Color("#c7c7c7");
-  w.addSpacer(8);
 
-  // NOTE: the server returns an "expense" array (each with category/avg/bucket),
-  // not a "topCategories" field — build the top-5 list from it here, sorted
-  // by average monthly cost descending (the server already sorts this way,
-  // but we re-slice defensively in case that changes).
-  const topCategories = [...data.expense]
-    .sort((a, b) => b.avg - a.avg)
-    .slice(0, 5)
-    .map((e) => ({ name: e.category, avg: e.avg }));
+  w.addSpacer(isLarge ? 14 : 8);
 
   if (topCategories.length === 0) {
     const none = w.addText("No expenses logged yet");
     none.font = Font.systemFont(12);
     none.textColor = new Color("#c7c7c7");
   } else {
-    for (let i = 0; i < topCategories.length; i++) {
-      const cat = topCategories[i];
+    const shown = topCategories.slice(0, maxCategories);
+    for (let i = 0; i < shown.length; i++) {
+      const cat = shown[i];
       const row = w.addStack();
       row.layoutHorizontally();
       row.centerAlignContent();
 
       const dot = row.addText("●");
-      dot.font = Font.systemFont(10);
+      dot.font = Font.systemFont(isLarge ? 13 : 10);
       dot.textColor = new Color(PIE_COLORS[i % PIE_COLORS.length]);
-      row.addSpacer(5);
+      row.addSpacer(6);
 
       const name = row.addText(cat.name);
-      name.font = Font.mediumSystemFont(12);
+      name.font = Font.mediumSystemFont(isLarge ? 14 : 12);
       name.textColor = new Color("#ffffff");
       name.lineLimit = 1;
 
       row.addSpacer();
 
       const amt = row.addText(fmt(cat.avg));
-      amt.font = Font.systemFont(11);
+      amt.font = Font.systemFont(isLarge ? 13 : 11);
       amt.textColor = new Color("#c7c7c7");
       amt.rightAlignText();
 
-      w.addSpacer(3);
+      w.addSpacer(isLarge ? 8 : 3);
+    }
+
+    if (topCategories.length > shown.length) {
+      w.addSpacer(2);
+      const more = w.addText(`+${topCategories.length - shown.length} more`);
+      more.font = Font.systemFont(10);
+      more.textColor = new Color("#8a8a8a");
     }
   }
 
