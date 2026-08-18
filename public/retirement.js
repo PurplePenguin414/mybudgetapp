@@ -65,6 +65,7 @@ async function refreshMonth() {
   state.contributions = contribData.entries;
   renderAccountList(balData.accounts, contribData.totalsByAccount);
   renderContribList(contribData.entries);
+  populateAccountSelect(balData.accounts);
   await renderMetrics(balData.accounts, contribData.totalsByAccount);
 }
 
@@ -146,30 +147,38 @@ function renderContribList(entries) {
   });
 }
 
-document.getElementById('add-contrib-link').addEventListener('click', async () => {
-  if (state.accounts.length === 0) {
+function populateAccountSelect(accounts) {
+  const sel = document.getElementById('cf-account');
+  const prevValue = sel.value;
+  sel.innerHTML = accounts.map((a) => `<option value="${a.account_id}">${a.name}</option>`).join('');
+  if (accounts.some((a) => String(a.account_id) === prevValue)) sel.value = prevValue;
+}
+
+document.getElementById('cf-submit').addEventListener('click', async () => {
+  const accountId = document.getElementById('cf-account').value;
+  if (!accountId) {
     alert('Add an account first.');
     return;
   }
-  const list = state.accounts.map((a, i) => `${i + 1}. ${a.name}`).join('\n');
-  const choice = prompt(`Which account?\n${list}`, '1');
-  const idx = parseInt(choice, 10) - 1;
-  if (isNaN(idx) || idx < 0 || idx >= state.accounts.length) return;
-  const account = state.accounts[idx];
-
-  const contribStr = prompt('Your contribution this paycheck ($, leave blank for none):');
-  const employerStr = prompt('Employer match this paycheck ($, leave blank for none):');
-  const contribution = contribStr && contribStr.trim() !== '' ? parseFloat(contribStr) : null;
-  const employer_contribution = employerStr && employerStr.trim() !== '' ? parseFloat(employerStr) : null;
-  if (contribution === null && employer_contribution === null) return;
-
-  const note = prompt('Note (optional, e.g. "paycheck 1"):') || null;
+  const youRaw = document.getElementById('cf-you').value;
+  const employerRaw = document.getElementById('cf-employer').value;
+  const contribution = youRaw.trim() !== '' ? parseFloat(youRaw) : null;
+  const employer_contribution = employerRaw.trim() !== '' ? parseFloat(employerRaw) : null;
+  if (contribution === null && employer_contribution === null) {
+    alert('Enter an amount for you, your employer, or both.');
+    return;
+  }
+  const note = document.getElementById('cf-note').value.trim() || null;
 
   await fetch('/api/retirement/contribution', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ account_id: account.account_id, year: state.year, month: state.month, contribution, employer_contribution, note })
+    body: JSON.stringify({ account_id: accountId, year: state.year, month: state.month, contribution, employer_contribution, note })
   });
+
+  document.getElementById('cf-you').value = '';
+  document.getElementById('cf-employer').value = '';
+  document.getElementById('cf-note').value = '';
   refreshMonth();
 });
 
