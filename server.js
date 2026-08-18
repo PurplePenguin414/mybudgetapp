@@ -140,12 +140,47 @@ CREATE TABLE IF NOT EXISTS retirement_balances (
   note TEXT,
   UNIQUE(account_id, year, month)
 );
+
+CREATE TABLE IF NOT EXISTS retirement_contributions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id INTEGER NOT NULL REFERENCES retirement_accounts(id),
+  year INTEGER NOT NULL,
+  month INTEGER NOT NULL,
+  contribution REAL,
+  employer_contribution REAL,
+  note TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 `);
 
 // ---------- Migration: add employer_contribution to existing installs ----------
 const retirementBalCols = db.prepare("PRAGMA table_info(retirement_balances)").all().map((c) => c.name);
 if (!retirementBalCols.includes('employer_contribution')) {
   db.exec('ALTER TABLE retirement_balances ADD COLUMN employer_contribution REAL');
+}
+
+// ---------- Migration: carry forward any old single-entry contributions into the new log ----------
+// (only runs once — if the new table is already empty and old data exists)
+const contribMigrationCheck = db.prepare('SELECT COUNT(*) AS c FROM retirement_contributions').get().c;
+if (contribMigrationCheck === 0) {
+  const oldRows = db
+    .prepare(
+      `SELECT account_id, year, month, contribution, employer_contribution
+       FROM retirement_balances
+       WHERE contribution IS NOT NULL OR employer_contribution IS NOT NULL`
+    )
+    .all();
+  if (oldRows.length > 0) {
+    const insertOld = db.prepare(
+      'INSERT INTO retirement_contributions (account_id, year, month, contribution, employer_contribution, note) VALUES (?, ?, ?, ?, ?, ?)'
+    );
+    const migrateOld = db.transaction(() => {
+      oldRows.forEach((r) => {
+        insertOld.run(r.account_id, r.year, r.month, r.contribution, r.employer_contribution, 'carried forward from prior single-entry log');
+      });
+    });
+    migrateOld();
+  }
 }
 
 // ---------- Migration: add schedule_type/fixed_day to existing installs ----------
@@ -659,6 +694,49 @@ app.get('/api/retirement/trend', requireAuth, (req, res) => {
     months: Object.keys(byMonth).sort().map((k) => byMonth[k]),
     byAccount
   });
+});
+
+// ---------- Retirement contributions (repeatable log — e.g. per paycheck) ----------
+app.get('/api/retirement/contributions/:year/:month', requireAuth, (req, res) => {
+  const { year, month } = req.params;
+  const rows = db
+    .prepare(
+      `SELECT c.id, c.account_id, a.name AS account_name, c.contribution, c.employer_contribution, c.note, c.created_at
+       FROM retirement_contributions c JOIN retirement_accounts a ON a.id = c.account_id
+       WHERE c.year = ? AND c.month = ?
+       ORDER BY c.created_at`
+    )
+    .all(year, month);
+
+  const totalsByAccount = {};
+  rows.forEach((r) => {
+    if (!totalsByAccount[r.account_id]) totalsByAccount[r.account_id] = { contribution: 0, employer_contribution: 0 };
+    totalsByAccount[r.account_id].contribution += r.contribution || 0;
+    totalsByAccount[r.account_id].employer_contribution += r.employer_contribution || 0;
+  });
+
+  res.json({ entries: rows, totalsByAccount });
+});
+
+app.post('/api/retirement/contribution', requireAuth, (req, res) => {
+  const { account_id, year, month, contribution, employer_contribution, note } = req.body;
+  if (!account_id || !year || !month) {
+    return res.status(400).json({ error: 'account_id, year, month are required' });
+  }
+  if ((contribution === undefined || contribution === null) && (employer_contribution === undefined || employer_contribution === null)) {
+    return res.status(400).json({ error: 'at least one of contribution or employer_contribution is required' });
+  }
+  const info = db
+    .prepare(
+      'INSERT INTO retirement_contributions (account_id, year, month, contribution, employer_contribution, note) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    .run(account_id, year, month, contribution ?? null, employer_contribution ?? null, note || null);
+  res.json({ id: info.lastInsertRowid });
+});
+
+app.delete('/api/retirement/contribution/:id', requireAuth, (req, res) => {
+  db.prepare('DELETE FROM retirement_contributions WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 // ---------- Dedicated account (BeyondFinance settlement fund) ----------
