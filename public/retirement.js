@@ -78,12 +78,27 @@ function renderAccountList(accounts, totalsByAccount) {
   container.innerHTML = accounts
     .map((a) => {
       const totals = totalsByAccount[a.account_id] || { contribution: 0, employer_contribution: 0 };
+
+      let expectedLine = '';
+      if (a.expected_balance !== null && a.expected_balance !== undefined) {
+        expectedLine = `<div class="acct-subtitle">expected: ${fmt(a.expected_balance)} (${fmt(a.prev_balance)} last month + ${fmt(a.contributed_this_month)} contributed)</div>`;
+        if (a.balance !== null && a.balance !== undefined) {
+          const diff = a.balance - a.expected_balance;
+          const diffColor = diff >= 0 ? 'var(--green)' : 'var(--red)';
+          const diffLabel = (diff >= 0 ? '+' : '−') + fmt(Math.abs(diff));
+          expectedLine += `<div class="acct-subtitle">vs. actual: <span style="color:${diffColor}">${diffLabel}</span></div>`;
+        }
+      } else {
+        expectedLine = `<div class="acct-subtitle">no prior balance yet to calculate an expected amount</div>`;
+      }
+
       return `
     <div class="acct-row">
       <div class="acct-name">
         <div class="name">${a.name}</div>
         ${a.account_type ? `<div class="type">${a.account_type}</div>` : ''}
-        <div class="acct-subtitle">logged this month: ${fmt(totals.contribution)} you + ${fmt(totals.employer_contribution)} employer</div>
+        <div class="acct-subtitle">logged this month: ${fmt(totals.contribution)} you + ${fmt(totals.employer_contribution)} employer = ${fmt((totals.contribution || 0) + (totals.employer_contribution || 0))} total</div>
+        ${expectedLine}
       </div>
       <div class="acct-input-wrap">
         <span>balance $</span>
@@ -110,10 +125,7 @@ function renderAccountList(accounts, totalsByAccount) {
       hint.classList.add('show');
       setTimeout(() => hint.classList.remove('show'), 1500);
 
-      state.accounts = state.accounts.map((a) =>
-        a.account_id == accountId ? { ...a, balance } : a
-      );
-      await renderMetrics(state.accounts, null);
+      await refreshMonth();
       loadTrend();
     });
   });
@@ -131,7 +143,7 @@ function renderContribList(entries) {
     <div class="contrib-row">
       <div>
         <span class="contrib-acct">${e.account_name}</span>
-        <span class="contrib-amts">${fmt(e.contribution)} you · ${fmt(e.employer_contribution)} employer</span>
+        <span class="contrib-amts">${fmt(e.contribution)} you · ${fmt(e.employer_contribution)} employer · <strong>${fmt((e.contribution || 0) + (e.employer_contribution || 0))} total</strong></span>
         ${e.note ? `<span class="contrib-note">${e.note}</span>` : ''}
       </div>
       <button class="contrib-del" data-id="${e.id}">delete</button>
@@ -196,7 +208,7 @@ async function renderMetrics(accounts, totalsByAccount) {
   }
   const yourContrib = Object.values(totalsByAccount).reduce((s, t) => s + (t.contribution || 0), 0);
   const employerContrib = Object.values(totalsByAccount).reduce((s, t) => s + (t.employer_contribution || 0), 0);
-  document.getElementById('r-contrib').textContent = `${fmt(yourContrib)} + ${fmt(employerContrib)}`;
+  document.getElementById('r-contrib').textContent = `${fmt(yourContrib)} + ${fmt(employerContrib)} = ${fmt(yourContrib + employerContrib)}`;
 
   const trendRes = await fetch('/api/retirement/trend');
   const trend = await trendRes.json();
