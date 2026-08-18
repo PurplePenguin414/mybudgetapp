@@ -2,6 +2,7 @@ const state = {
   year: new Date().getFullYear(),
   month: new Date().getMonth() + 1,
   accounts: [],
+  contributions: [],
   totalChart: null,
   acctChart: null
 };
@@ -54,63 +55,54 @@ document.getElementById('add-acct-link').addEventListener('click', async () => {
 
 async function refreshMonth() {
   renderMonthLabel();
-  const res = await fetch(`/api/retirement/balances/${state.year}/${state.month}`);
-  const data = await res.json();
-  state.accounts = data.accounts;
-  renderAccountList(data.accounts);
-  await renderMetrics(data.accounts);
+  const [balRes, contribRes] = await Promise.all([
+    fetch(`/api/retirement/balances/${state.year}/${state.month}`),
+    fetch(`/api/retirement/contributions/${state.year}/${state.month}`)
+  ]);
+  const balData = await balRes.json();
+  const contribData = await contribRes.json();
+  state.accounts = balData.accounts;
+  state.contributions = contribData.entries;
+  renderAccountList(balData.accounts, contribData.totalsByAccount);
+  renderContribList(contribData.entries);
+  await renderMetrics(balData.accounts, contribData.totalsByAccount);
 }
 
-function renderAccountList(accounts) {
+function renderAccountList(accounts, totalsByAccount) {
   const container = document.getElementById('acct-list');
   if (accounts.length === 0) {
     container.innerHTML = '<div class="empty-msg">No accounts added yet.</div>';
     return;
   }
   container.innerHTML = accounts
-    .map(
-      (a) => `
+    .map((a) => {
+      const totals = totalsByAccount[a.account_id] || { contribution: 0, employer_contribution: 0 };
+      return `
     <div class="acct-row">
       <div class="acct-name">
         <div class="name">${a.name}</div>
         ${a.account_type ? `<div class="type">${a.account_type}</div>` : ''}
+        <div class="acct-subtitle">logged this month: ${fmt(totals.contribution)} you + ${fmt(totals.employer_contribution)} employer</div>
       </div>
       <div class="acct-input-wrap">
         <span>balance $</span>
-        <input type="number" step="0.01" min="0" data-field="balance" data-account-id="${a.account_id}" value="${a.balance !== null ? a.balance : ''}" placeholder="balance" />
-      </div>
-      <div class="acct-input-wrap">
-        <span>you $</span>
-        <input type="number" step="0.01" min="0" data-field="contribution" data-account-id="${a.account_id}" value="${a.contribution !== null && a.contribution !== undefined ? a.contribution : ''}" placeholder="optional" />
-      </div>
-      <div class="acct-input-wrap">
-        <span>employer $</span>
-        <input type="number" step="0.01" min="0" data-field="employer_contribution" data-account-id="${a.account_id}" value="${a.employer_contribution !== null && a.employer_contribution !== undefined ? a.employer_contribution : ''}" placeholder="optional" />
+        <input type="number" step="0.01" min="0" data-account-id="${a.account_id}" value="${a.balance !== null ? a.balance : ''}" placeholder="balance" />
       </div>
       <span class="save-hint" id="hint-${a.account_id}">saved</span>
-    </div>`
-    )
+    </div>`;
+    })
     .join('');
 
   container.querySelectorAll('input').forEach((input) => {
     input.addEventListener('change', async () => {
       const accountId = input.dataset.accountId;
-
-      const balanceInput = container.querySelector(`input[data-field="balance"][data-account-id="${accountId}"]`);
-      const contribInput = container.querySelector(`input[data-field="contribution"][data-account-id="${accountId}"]`);
-      const employerInput = container.querySelector(`input[data-field="employer_contribution"][data-account-id="${accountId}"]`);
-
-      const balance = parseFloat(balanceInput.value);
+      const balance = parseFloat(input.value);
       if (isNaN(balance) || balance < 0) return;
-      const contribRaw = contribInput.value;
-      const contribution = contribRaw === '' ? null : parseFloat(contribRaw);
-      const employerRaw = employerInput.value;
-      const employer_contribution = employerRaw === '' ? null : parseFloat(employerRaw);
 
       await fetch('/api/retirement/balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account_id: accountId, year: state.year, month: state.month, balance, contribution, employer_contribution })
+        body: JSON.stringify({ account_id: accountId, year: state.year, month: state.month, balance })
       });
 
       const hint = document.getElementById(`hint-${accountId}`);
@@ -118,22 +110,83 @@ function renderAccountList(accounts) {
       setTimeout(() => hint.classList.remove('show'), 1500);
 
       state.accounts = state.accounts.map((a) =>
-        a.account_id == accountId ? { ...a, balance, contribution, employer_contribution } : a
+        a.account_id == accountId ? { ...a, balance } : a
       );
-      await renderMetrics(state.accounts);
+      await renderMetrics(state.accounts, null);
       loadTrend();
     });
   });
 }
 
-async function renderMetrics(accounts) {
+function renderContribList(entries) {
+  const container = document.getElementById('contrib-list');
+  if (entries.length === 0) {
+    container.innerHTML = '<div class="empty-msg">Nothing logged for this month yet.</div>';
+    return;
+  }
+  container.innerHTML = entries
+    .map(
+      (e) => `
+    <div class="contrib-row">
+      <div>
+        <span class="contrib-acct">${e.account_name}</span>
+        <span class="contrib-amts">${fmt(e.contribution)} you · ${fmt(e.employer_contribution)} employer</span>
+        ${e.note ? `<span class="contrib-note">${e.note}</span>` : ''}
+      </div>
+      <button class="contrib-del" data-id="${e.id}">delete</button>
+    </div>`
+    )
+    .join('');
+
+  container.querySelectorAll('.contrib-del').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await fetch(`/api/retirement/contribution/${btn.dataset.id}`, { method: 'DELETE' });
+      refreshMonth();
+    });
+  });
+}
+
+document.getElementById('add-contrib-link').addEventListener('click', async () => {
+  if (state.accounts.length === 0) {
+    alert('Add an account first.');
+    return;
+  }
+  const list = state.accounts.map((a, i) => `${i + 1}. ${a.name}`).join('\n');
+  const choice = prompt(`Which account?\n${list}`, '1');
+  const idx = parseInt(choice, 10) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= state.accounts.length) return;
+  const account = state.accounts[idx];
+
+  const contribStr = prompt('Your contribution this paycheck ($, leave blank for none):');
+  const employerStr = prompt('Employer match this paycheck ($, leave blank for none):');
+  const contribution = contribStr && contribStr.trim() !== '' ? parseFloat(contribStr) : null;
+  const employer_contribution = employerStr && employerStr.trim() !== '' ? parseFloat(employerStr) : null;
+  if (contribution === null && employer_contribution === null) return;
+
+  const note = prompt('Note (optional, e.g. "paycheck 1"):') || null;
+
+  await fetch('/api/retirement/contribution', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account_id: account.account_id, year: state.year, month: state.month, contribution, employer_contribution, note })
+  });
+  refreshMonth();
+});
+
+async function renderMetrics(accounts, totalsByAccount) {
   const logged = accounts.filter((a) => a.balance !== null && a.balance !== undefined);
   const total = logged.reduce((s, a) => s + a.balance, 0);
-  const yourContrib = accounts.reduce((s, a) => s + (a.contribution || 0), 0);
-  const employerContrib = accounts.reduce((s, a) => s + (a.employer_contribution || 0), 0);
 
   document.getElementById('r-total').textContent = fmt(total);
   document.getElementById('r-count').textContent = `${logged.length} / ${accounts.length}`;
+
+  if (!totalsByAccount) {
+    const contribRes = await fetch(`/api/retirement/contributions/${state.year}/${state.month}`);
+    const contribData = await contribRes.json();
+    totalsByAccount = contribData.totalsByAccount;
+  }
+  const yourContrib = Object.values(totalsByAccount).reduce((s, t) => s + (t.contribution || 0), 0);
+  const employerContrib = Object.values(totalsByAccount).reduce((s, t) => s + (t.employer_contribution || 0), 0);
   document.getElementById('r-contrib').textContent = `${fmt(yourContrib)} + ${fmt(employerContrib)}`;
 
   const trendRes = await fetch('/api/retirement/trend');
