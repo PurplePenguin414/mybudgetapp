@@ -80,8 +80,12 @@ function renderAccountList(accounts) {
         <input type="number" step="0.01" min="0" data-field="balance" data-account-id="${a.account_id}" value="${a.balance !== null ? a.balance : ''}" placeholder="balance" />
       </div>
       <div class="acct-input-wrap">
-        <span>contrib. $</span>
+        <span>you $</span>
         <input type="number" step="0.01" min="0" data-field="contribution" data-account-id="${a.account_id}" value="${a.contribution !== null && a.contribution !== undefined ? a.contribution : ''}" placeholder="optional" />
+      </div>
+      <div class="acct-input-wrap">
+        <span>employer $</span>
+        <input type="number" step="0.01" min="0" data-field="employer_contribution" data-account-id="${a.account_id}" value="${a.employer_contribution !== null && a.employer_contribution !== undefined ? a.employer_contribution : ''}" placeholder="optional" />
       </div>
       <span class="save-hint" id="hint-${a.account_id}">saved</span>
     </div>`
@@ -91,20 +95,22 @@ function renderAccountList(accounts) {
   container.querySelectorAll('input').forEach((input) => {
     input.addEventListener('change', async () => {
       const accountId = input.dataset.accountId;
-      const row = state.accounts.find((a) => a.account_id == accountId);
 
       const balanceInput = container.querySelector(`input[data-field="balance"][data-account-id="${accountId}"]`);
       const contribInput = container.querySelector(`input[data-field="contribution"][data-account-id="${accountId}"]`);
+      const employerInput = container.querySelector(`input[data-field="employer_contribution"][data-account-id="${accountId}"]`);
 
       const balance = parseFloat(balanceInput.value);
       if (isNaN(balance) || balance < 0) return;
       const contribRaw = contribInput.value;
       const contribution = contribRaw === '' ? null : parseFloat(contribRaw);
+      const employerRaw = employerInput.value;
+      const employer_contribution = employerRaw === '' ? null : parseFloat(employerRaw);
 
       await fetch('/api/retirement/balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account_id: accountId, year: state.year, month: state.month, balance, contribution })
+        body: JSON.stringify({ account_id: accountId, year: state.year, month: state.month, balance, contribution, employer_contribution })
       });
 
       const hint = document.getElementById(`hint-${accountId}`);
@@ -112,7 +118,7 @@ function renderAccountList(accounts) {
       setTimeout(() => hint.classList.remove('show'), 1500);
 
       state.accounts = state.accounts.map((a) =>
-        a.account_id == accountId ? { ...a, balance, contribution } : a
+        a.account_id == accountId ? { ...a, balance, contribution, employer_contribution } : a
       );
       await renderMetrics(state.accounts);
       loadTrend();
@@ -123,9 +129,12 @@ function renderAccountList(accounts) {
 async function renderMetrics(accounts) {
   const logged = accounts.filter((a) => a.balance !== null && a.balance !== undefined);
   const total = logged.reduce((s, a) => s + a.balance, 0);
+  const yourContrib = accounts.reduce((s, a) => s + (a.contribution || 0), 0);
+  const employerContrib = accounts.reduce((s, a) => s + (a.employer_contribution || 0), 0);
 
   document.getElementById('r-total').textContent = fmt(total);
   document.getElementById('r-count').textContent = `${logged.length} / ${accounts.length}`;
+  document.getElementById('r-contrib').textContent = `${fmt(yourContrib)} + ${fmt(employerContrib)}`;
 
   const trendRes = await fetch('/api/retirement/trend');
   const trend = await trendRes.json();
