@@ -1,10 +1,17 @@
 .topnav {
   display: flex;
-  gap: 6px;
-  overflow-x: auto;
+  align-items: center;
+  gap: 8px;
   padding-bottom: 14px;
   margin-bottom: 24px;
   border-bottom: 1px solid var(--border);
+}
+.topnav-scroll {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  flex: 1 1 auto;
+  min-width: 0;
   -webkit-overflow-scrolling: touch;
 }
 .topnav-item {
@@ -25,7 +32,7 @@
 .topnav-item:hover { background: var(--surface2); }
 .topnav-item.active { background: var(--blue); color: #fff; border-color: var(--blue); }
 .topnav-icon { font-size: 14px; }
-.topnav-theme-toggle { margin-left: auto; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 12px; }
+.topnav-theme-toggle { flex-shrink: 0; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 12px; }
 
 /* Every page defines input/select/textarea backgrounds but not text color,
    so browsers fall back to black text — invisible against a dark background. */
