@@ -160,7 +160,6 @@ if (!retirementBalCols.includes('employer_contribution')) {
 }
 
 // ---------- Migration: carry forward any old single-entry contributions into the new log ----------
-// (only runs once — if the new table is already empty and old data exists)
 const contribMigrationCheck = db.prepare('SELECT COUNT(*) AS c FROM retirement_contributions').get().c;
 if (contribMigrationCheck === 0) {
   const oldRows = db
@@ -656,7 +655,29 @@ app.get('/api/retirement/balances/:year/:month', requireAuth, (req, res) => {
        ORDER BY a.sort_order, a.name`
     )
     .all(year, month);
-  res.json({ accounts: rows });
+
+  // Expected balance = last logged balance (any prior month) + this month's contributions logged so far.
+  // Lets Megan sanity-check what she enters without doing the math herself.
+  const withExpected = rows.map((r) => {
+    const prevRow = db
+      .prepare(
+        `SELECT balance FROM retirement_balances
+         WHERE account_id = ? AND (year < ? OR (year = ? AND month < ?))
+         ORDER BY year DESC, month DESC LIMIT 1`
+      )
+      .get(r.account_id, year, year, month);
+    const contribTotals = db
+      .prepare(
+        `SELECT COALESCE(SUM(contribution),0) AS c, COALESCE(SUM(employer_contribution),0) AS e
+         FROM retirement_contributions WHERE account_id = ? AND year = ? AND month = ?`
+      )
+      .get(r.account_id, year, month);
+    const contributedThisMonth = (contribTotals.c || 0) + (contribTotals.e || 0);
+    const expected_balance = prevRow ? prevRow.balance + contributedThisMonth : null;
+    return { ...r, prev_balance: prevRow ? prevRow.balance : null, contributed_this_month: contributedThisMonth, expected_balance };
+  });
+
+  res.json({ accounts: withExpected });
 });
 
 app.post('/api/retirement/balance', requireAuth, (req, res) => {
