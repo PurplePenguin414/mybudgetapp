@@ -39,6 +39,7 @@
     { href: 'averages.html', icon: '📊', label: 'Averages' },
     { href: 'debt.html', icon: '💳', label: 'Debt' },
     { href: 'savings.html', icon: '💰', label: 'Savings' },
+    { href: 'retirement.html', icon: '🏦', label: 'Retirement' },
     { href: 'yearly.html', icon: '📅', label: 'Yearly' },
     { href: 'bills.html', icon: '🧾', label: 'Bills' }
   ];
@@ -47,12 +48,16 @@
 
   var nav = document.createElement('nav');
   nav.className = 'topnav';
-  nav.innerHTML = NAV_ITEMS.map(function (item) {
+
+  var scrollArea = document.createElement('div');
+  scrollArea.className = 'topnav-scroll';
+  scrollArea.innerHTML = NAV_ITEMS.map(function (item) {
     var active = item.href === current ? ' active' : '';
     return '<a href="' + item.href + '" class="topnav-item' + active + '">' +
       '<span class="topnav-icon">' + item.icon + '</span>' +
       '<span class="topnav-label">' + item.label + '</span></a>';
   }).join('');
+  nav.appendChild(scrollArea);
 
   var toggleBtn = document.createElement('button');
   toggleBtn.className = 'topnav-item topnav-theme-toggle';
