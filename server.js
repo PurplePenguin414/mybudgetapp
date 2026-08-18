@@ -136,10 +136,17 @@ CREATE TABLE IF NOT EXISTS retirement_balances (
   month INTEGER NOT NULL,
   balance REAL NOT NULL,
   contribution REAL,
+  employer_contribution REAL,
   note TEXT,
   UNIQUE(account_id, year, month)
 );
 `);
+
+// ---------- Migration: add employer_contribution to existing installs ----------
+const retirementBalCols = db.prepare("PRAGMA table_info(retirement_balances)").all().map((c) => c.name);
+if (!retirementBalCols.includes('employer_contribution')) {
+  db.exec('ALTER TABLE retirement_balances ADD COLUMN employer_contribution REAL');
+}
 
 // ---------- Migration: add schedule_type/fixed_day to existing installs ----------
 const billCols = db.prepare("PRAGMA table_info(bills)").all().map((c) => c.name);
@@ -608,7 +615,7 @@ app.get('/api/retirement/balances/:year/:month', requireAuth, (req, res) => {
   const { year, month } = req.params;
   const rows = db
     .prepare(
-      `SELECT a.id AS account_id, a.name, a.account_type, b.balance, b.contribution, b.note
+      `SELECT a.id AS account_id, a.name, a.account_type, b.balance, b.contribution, b.employer_contribution, b.note
        FROM retirement_accounts a
        LEFT JOIN retirement_balances b ON b.account_id = a.id AND b.year = ? AND b.month = ?
        ORDER BY a.sort_order, a.name`
@@ -618,14 +625,14 @@ app.get('/api/retirement/balances/:year/:month', requireAuth, (req, res) => {
 });
 
 app.post('/api/retirement/balance', requireAuth, (req, res) => {
-  const { account_id, year, month, balance, contribution, note } = req.body;
+  const { account_id, year, month, balance, contribution, employer_contribution, note } = req.body;
   if (!account_id || !year || !month || balance === undefined || balance === null) {
     return res.status(400).json({ error: 'account_id, year, month, balance are required' });
   }
   db.prepare(
-    `INSERT INTO retirement_balances (account_id, year, month, balance, contribution, note) VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(account_id, year, month) DO UPDATE SET balance = excluded.balance, contribution = excluded.contribution, note = excluded.note`
-  ).run(account_id, year, month, balance, contribution ?? null, note || null);
+    `INSERT INTO retirement_balances (account_id, year, month, balance, contribution, employer_contribution, note) VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(account_id, year, month) DO UPDATE SET balance = excluded.balance, contribution = excluded.contribution, employer_contribution = excluded.employer_contribution, note = excluded.note`
+  ).run(account_id, year, month, balance, contribution ?? null, employer_contribution ?? null, note || null);
   res.json({ ok: true });
 });
 
