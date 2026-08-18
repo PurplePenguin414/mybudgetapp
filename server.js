@@ -119,6 +119,26 @@ CREATE TABLE IF NOT EXISTS bills (
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS retirement_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  account_type TEXT,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS retirement_balances (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id INTEGER NOT NULL REFERENCES retirement_accounts(id),
+  year INTEGER NOT NULL,
+  month INTEGER NOT NULL,
+  balance REAL NOT NULL,
+  contribution REAL,
+  note TEXT,
+  UNIQUE(account_id, year, month)
+);
 `);
 
 // ---------- Migration: add schedule_type/fixed_day to existing installs ----------
@@ -209,6 +229,22 @@ const hasCitiBank = db.prepare("SELECT id FROM debts WHERE name = 'Citi Bank'").
 if (!hasCitiBank) {
   const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM debts').get().m;
   db.prepare('INSERT INTO debts (name, is_default, sort_order) VALUES (?, 1, ?)').run('Citi Bank', maxOrder + 1);
+}
+
+// ---------- Seed retirement accounts (only if table is empty) ----------
+const retirementCount = db.prepare('SELECT COUNT(*) AS c FROM retirement_accounts').get().c;
+if (retirementCount === 0) {
+  const insertRetirement = db.prepare(
+    'INSERT INTO retirement_accounts (name, account_type, is_default, sort_order) VALUES (?, ?, 1, ?)'
+  );
+  const retirementDefaults = [
+    ['Target Date 401(k) (Work)', 'traditional'],
+    ['Roth 401(k) (PNC)', 'roth']
+  ];
+  const seedRetirement = db.transaction(() => {
+    retirementDefaults.forEach(([name, type], i) => insertRetirement.run(name, type, i));
+  });
+  seedRetirement();
 }
 
 // ---------- Migration: assign buckets / add Savings category for pre-existing installs ----------
@@ -544,6 +580,77 @@ app.get('/api/debts/trend', requireAuth, (req, res) => {
   res.json({
     months: Object.keys(byMonth).sort().map((k) => byMonth[k]),
     byDebt
+  });
+});
+
+// ---------- Retirement accounts ----------
+app.get('/api/retirement/accounts', requireAuth, (req, res) => {
+  const accounts = db.prepare('SELECT * FROM retirement_accounts ORDER BY sort_order, name').all();
+  res.json({ accounts });
+});
+
+app.post('/api/retirement/accounts', requireAuth, (req, res) => {
+  const { name, account_type } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
+  try {
+    const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM retirement_accounts').get().m;
+    const info = db
+      .prepare('INSERT INTO retirement_accounts (name, account_type, is_default, sort_order) VALUES (?, ?, 0, ?)')
+      .run(name.trim(), account_type || null, maxOrder + 1);
+    res.json({ id: info.lastInsertRowid, name: name.trim() });
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Account already exists' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/retirement/balances/:year/:month', requireAuth, (req, res) => {
+  const { year, month } = req.params;
+  const rows = db
+    .prepare(
+      `SELECT a.id AS account_id, a.name, a.account_type, b.balance, b.contribution, b.note
+       FROM retirement_accounts a
+       LEFT JOIN retirement_balances b ON b.account_id = a.id AND b.year = ? AND b.month = ?
+       ORDER BY a.sort_order, a.name`
+    )
+    .all(year, month);
+  res.json({ accounts: rows });
+});
+
+app.post('/api/retirement/balance', requireAuth, (req, res) => {
+  const { account_id, year, month, balance, contribution, note } = req.body;
+  if (!account_id || !year || !month || balance === undefined || balance === null) {
+    return res.status(400).json({ error: 'account_id, year, month, balance are required' });
+  }
+  db.prepare(
+    `INSERT INTO retirement_balances (account_id, year, month, balance, contribution, note) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(account_id, year, month) DO UPDATE SET balance = excluded.balance, contribution = excluded.contribution, note = excluded.note`
+  ).run(account_id, year, month, balance, contribution ?? null, note || null);
+  res.json({ ok: true });
+});
+
+app.get('/api/retirement/trend', requireAuth, (req, res) => {
+  const rows = db
+    .prepare(
+      `SELECT a.name, b.year, b.month, b.balance
+       FROM retirement_balances b JOIN retirement_accounts a ON a.id = b.account_id
+       ORDER BY b.year, b.month`
+    )
+    .all();
+
+  const byMonth = {};
+  const byAccount = {};
+  rows.forEach((r) => {
+    const key = `${r.year}-${String(r.month).padStart(2, '0')}`;
+    if (!byMonth[key]) byMonth[key] = { key, total: 0 };
+    byMonth[key].total += r.balance;
+    if (!byAccount[r.name]) byAccount[r.name] = {};
+    byAccount[r.name][key] = r.balance;
+  });
+
+  res.json({
+    months: Object.keys(byMonth).sort().map((k) => byMonth[k]),
+    byAccount
   });
 });
 
