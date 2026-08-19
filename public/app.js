@@ -453,14 +453,17 @@ async function renderMomTable(currentEntries) {
   const prevData = await res.json();
 
   const curTotals = {};
+  const bucketByName = {};
   currentEntries.forEach((e) => {
     const key = e.category_name + '|' + e.kind;
     curTotals[key] = (curTotals[key] || 0) + e.amount;
+    if (e.budget_bucket) bucketByName[e.category_name] = e.budget_bucket;
   });
   const prevTotals = {};
   prevData.entries.forEach((e) => {
     const key = e.category_name + '|' + e.kind;
     prevTotals[key] = (prevTotals[key] || 0) + e.amount;
+    if (e.budget_bucket) bucketByName[e.category_name] = e.budget_bucket;
   });
 
   const allKeys = Array.from(new Set([...Object.keys(curTotals), ...Object.keys(prevTotals)]));
@@ -479,7 +482,9 @@ async function renderMomTable(currentEntries) {
       if (prev > 0) {
         const pct = ((cur - prev) / prev) * 100;
         changeLabel = (pct >= 0 ? '+' : '') + pct.toFixed(0) + '%';
-        const improved = kind === 'income' ? pct >= 0 : pct <= 0;
+        // Income and Savings/Investing both work like income here — more is the good direction.
+        const actsLikeIncome = kind === 'income' || bucketByName[name] === 'savings';
+        const improved = actsLikeIncome ? pct >= 0 : pct <= 0;
         color = pct === 0 ? 'var(--muted)' : improved ? 'var(--green)' : 'var(--red)';
       } else if (cur > 0) {
         changeLabel = 'new';
