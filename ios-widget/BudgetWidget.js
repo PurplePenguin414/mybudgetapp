@@ -82,15 +82,13 @@ async function createWidget(data) {
 
   w.addSpacer(isLarge ? 12 : 8);
 
-  const totalFlags = data.counts.over_target + data.counts.near_target;
-
-  if (totalFlags === 0) {
-    const ok = w.addText("✅ All categories on track");
-    ok.font = Font.systemFont(isLarge ? 14 : 12);
-    ok.textColor = new Color("#3f8f5f");
+  if (data.needs_attention.length === 0) {
+    const ok = w.addText("No spending logged against targets yet");
+    ok.font = Font.systemFont(isLarge ? 13 : 11);
+    ok.textColor = new Color("#c7c7c7");
   } else {
     const summary = w.addText(
-      `${data.counts.over_target} over budget · ${data.counts.near_target} near limit`
+      `${data.counts.over_target} over · ${data.counts.near_target} near · ${data.counts.on_track} on track`
     );
     summary.font = Font.systemFont(isLarge ? 13 : 11);
     summary.textColor = new Color("#c7c7c7");
