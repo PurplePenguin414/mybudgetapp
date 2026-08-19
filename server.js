@@ -1254,18 +1254,19 @@ app.get('/api/widget/summary', requireWidgetKey, (req, res) => {
   const needsAttention = [];
   targetRows.forEach((t) => {
     const actual = actualByCategory[t.category_id] || 0;
+    if (actual <= 0) return; // only categories with actual spending logged
     const pct = t.target > 0 ? (actual / t.target) * 100 : 0;
-    if (pct > 100) {
-      needsAttention.push({ name: t.category_name, status: 'over', actual, target: t.target, pct: Math.round(pct) });
-    } else if (pct >= 90) {
-      needsAttention.push({ name: t.category_name, status: 'near', actual, target: t.target, pct: Math.round(pct) });
-    }
+    let status = 'ok';
+    if (pct > 100) status = 'over';
+    else if (pct >= 90) status = 'near';
+    needsAttention.push({ name: t.category_name, status, actual, target: t.target, pct: Math.round(pct) });
   });
   needsAttention.sort((a, b) => b.pct - a.pct);
 
   const counts = {
     over_target: needsAttention.filter((n) => n.status === 'over').length,
-    near_target: needsAttention.filter((n) => n.status === 'near').length
+    near_target: needsAttention.filter((n) => n.status === 'near').length,
+    on_track: needsAttention.filter((n) => n.status === 'ok').length
   };
 
   res.json({
