@@ -1,4 +1,5 @@
 const fmt = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 async function checkSession() {
   const res = await fetch('/api/session');
@@ -35,7 +36,67 @@ async function loadSavings() {
   unallocEl.className = 'metric-value ' + (data.unallocated < 0 ? 'v-red' : '');
 
   renderAllocations(data.allocations, data.unallocated);
+  renderWithdrawals(data.withdrawals);
 }
+
+function renderWithdrawals(withdrawals) {
+  const container = document.getElementById('withdrawal-list');
+  if (withdrawals.length === 0) {
+    container.innerHTML = '<div class="empty-msg">No withdrawals logged.</div>';
+    return;
+  }
+  container.innerHTML = withdrawals
+    .map(
+      (w) => `
+    <div class="wd-row">
+      <div>
+        <span class="wd-date">${MONTH_NAMES[w.month - 1].slice(0, 3)} ${w.year}</span>
+        <span class="wd-amt">${fmt(w.amount)}</span>
+        ${w.note ? `<span class="wd-note">${w.note}</span>` : ''}
+      </div>
+      <button class="wd-del" data-id="${w.id}">delete</button>
+    </div>`
+    )
+    .join('');
+
+  container.querySelectorAll('.wd-del').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await fetch(`/api/savings/withdrawal/${btn.dataset.id}`, { method: 'DELETE' });
+      loadSavings();
+      loadNetWorth();
+    });
+  });
+}
+
+function initWithdrawalForm() {
+  const monthSel = document.getElementById('wf-month');
+  monthSel.innerHTML = MONTH_NAMES.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
+  const now = new Date();
+  monthSel.value = now.getMonth() + 1;
+  document.getElementById('wf-year').value = now.getFullYear();
+}
+
+document.getElementById('wf-submit').addEventListener('click', async () => {
+  const month = parseInt(document.getElementById('wf-month').value, 10);
+  const year = parseInt(document.getElementById('wf-year').value, 10);
+  const amount = parseFloat(document.getElementById('wf-amount').value);
+  if (isNaN(amount) || amount <= 0) {
+    alert('Enter an amount greater than 0.');
+    return;
+  }
+  const note = document.getElementById('wf-note').value.trim() || null;
+
+  await fetch('/api/savings/withdrawal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ year, month, amount, note })
+  });
+
+  document.getElementById('wf-amount').value = '';
+  document.getElementById('wf-note').value = '';
+  loadSavings();
+  loadNetWorth();
+});
 
 function renderAllocations(allocations, unallocated) {
   const container = document.getElementById('alloc-card');
@@ -107,6 +168,7 @@ document.getElementById('add-alloc-link').addEventListener('click', async () => 
 });
 
 async function init() {
+  initWithdrawalForm();
   await loadNetWorth();
   await loadSavings();
 }
