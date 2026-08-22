@@ -106,6 +106,15 @@ CREATE TABLE IF NOT EXISTS savings_allocations (
   sort_order INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS savings_withdrawals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  year INTEGER NOT NULL,
+  month INTEGER NOT NULL,
+  amount REAL NOT NULL,
+  note TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS bills (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -994,14 +1003,37 @@ function totalSavedAllTime() {
        WHERE c.budget_bucket = 'savings'`
     )
     .get();
-  return row.total;
+  const withdrawnRow = db
+    .prepare(`SELECT COALESCE(SUM(amount), 0) AS total FROM savings_withdrawals`)
+    .get();
+  return row.total - withdrawnRow.total;
 }
 
 app.get('/api/savings/summary', requireAuth, (req, res) => {
   const totalSaved = totalSavedAllTime();
   const allocations = db.prepare('SELECT * FROM savings_allocations ORDER BY sort_order, id').all();
   const allocated = allocations.reduce((s, a) => s + a.amount, 0);
-  res.json({ totalSaved, allocations, allocated, unallocated: totalSaved - allocated });
+  const withdrawals = db
+    .prepare('SELECT * FROM savings_withdrawals ORDER BY year DESC, month DESC, created_at DESC')
+    .all();
+  const totalWithdrawn = withdrawals.reduce((s, w) => s + w.amount, 0);
+  res.json({ totalSaved, allocations, allocated, unallocated: totalSaved - allocated, withdrawals, totalWithdrawn });
+});
+
+app.post('/api/savings/withdrawal', requireAuth, (req, res) => {
+  const { year, month, amount, note } = req.body;
+  if (!year || !month || amount === undefined || amount === null || amount <= 0) {
+    return res.status(400).json({ error: 'year, month, and a positive amount are required' });
+  }
+  const info = db
+    .prepare('INSERT INTO savings_withdrawals (year, month, amount, note) VALUES (?, ?, ?, ?)')
+    .run(year, month, amount, note || null);
+  res.json({ id: info.lastInsertRowid });
+});
+
+app.delete('/api/savings/withdrawal/:id', requireAuth, (req, res) => {
+  db.prepare('DELETE FROM savings_withdrawals WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 app.post('/api/savings/allocations', requireAuth, (req, res) => {
