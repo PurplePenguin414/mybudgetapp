@@ -40,6 +40,7 @@
     { href: 'debt.html', icon: '💳', label: 'Debt' },
     { href: 'savings.html', icon: '💰', label: 'Savings' },
     { href: 'retirement.html', icon: '🏦', label: 'Retirement' },
+    { href: 'goals.html', icon: '🎯', label: 'Goals' },
     { href: 'yearly.html', icon: '📅', label: 'Yearly' },
     { href: 'bills.html', icon: '🧾', label: 'Bills' }
   ];

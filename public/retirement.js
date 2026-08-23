@@ -99,6 +99,14 @@ function renderAccountList(accounts, totalsByAccount) {
         ${a.account_type ? `<div class="type">${a.account_type}</div>` : ''}
         <div class="acct-subtitle">logged this month: ${fmt(totals.contribution)} you + ${fmt(totals.employer_contribution)} employer = ${fmt((totals.contribution || 0) + (totals.employer_contribution || 0))} total</div>
         ${expectedLine}
+        <div class="goal-edit-row">
+          <select data-goal-account-id="${a.account_id}" data-goal-field="goal_type">
+            <option value="" ${!a.goal_type ? 'selected' : ''}>No goal</option>
+            <option value="dollar" ${a.goal_type === 'dollar' ? 'selected' : ''}>$ per year</option>
+            <option value="percent" ${a.goal_type === 'percent' ? 'selected' : ''}>% of income</option>
+          </select>
+          <input type="number" step="0.01" min="0" data-goal-account-id="${a.account_id}" data-goal-field="goal_amount" value="${a.goal_amount !== null && a.goal_amount !== undefined ? a.goal_amount : ''}" placeholder="${a.goal_type === 'percent' ? 'e.g. 15' : 'e.g. 23500'}" style="display:${a.goal_type ? 'inline-block' : 'none'};" />
+        </div>
       </div>
       <div class="acct-input-wrap">
         <span>balance $</span>
@@ -109,7 +117,34 @@ function renderAccountList(accounts, totalsByAccount) {
     })
     .join('');
 
-  container.querySelectorAll('input').forEach((input) => {
+  container.querySelectorAll('[data-goal-field]').forEach((el) => {
+    el.addEventListener('change', async () => {
+      const accountId = el.dataset.goalAccountId;
+      const field = el.dataset.goalField;
+      const row = el.closest('.acct-name');
+      const amountInput = row.querySelector('[data-goal-field="goal_amount"]');
+
+      if (field === 'goal_type') {
+        amountInput.style.display = el.value ? 'inline-block' : 'none';
+        amountInput.placeholder = el.value === 'percent' ? 'e.g. 15' : 'e.g. 23500';
+        await fetch(`/api/retirement/accounts/${accountId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ goal_type: el.value || null })
+        });
+        if (!el.value) refreshMonth();
+      } else {
+        const val = el.value.trim() === '' ? null : parseFloat(el.value);
+        await fetch(`/api/retirement/accounts/${accountId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ goal_amount: val })
+        });
+      }
+    });
+  });
+
+  container.querySelectorAll('input:not([data-goal-field])').forEach((input) => {
     input.addEventListener('change', async () => {
       const accountId = input.dataset.accountId;
       const balance = parseFloat(input.value);
