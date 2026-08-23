@@ -1475,7 +1475,7 @@ app.get('/api/goals-overview', requireAuth, (req, res) => {
       let avg_monthly_paydown = null;
       let projected_payoff_date = null;
 
-      if (current_balance <= 0) {
+      if (Math.round(current_balance) <= 0) {
         status = 'paid_off';
       } else if (balRows.length >= 2) {
         const first = balRows[0];
