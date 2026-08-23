@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS entries (
 CREATE TABLE IF NOT EXISTS debts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
+  target_payoff_date TEXT,
   is_default INTEGER NOT NULL DEFAULT 0,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -103,6 +104,7 @@ CREATE TABLE IF NOT EXISTS savings_allocations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   amount REAL NOT NULL DEFAULT 0,
+  target_amount REAL,
   sort_order INTEGER NOT NULL DEFAULT 0
 );
 
@@ -133,6 +135,8 @@ CREATE TABLE IF NOT EXISTS retirement_accounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
   account_type TEXT,
+  goal_type TEXT CHECK(goal_type IN ('dollar','percent') OR goal_type IS NULL),
+  goal_amount REAL,
   is_default INTEGER NOT NULL DEFAULT 0,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -166,6 +170,23 @@ CREATE TABLE IF NOT EXISTS retirement_contributions (
 const retirementBalCols = db.prepare("PRAGMA table_info(retirement_balances)").all().map((c) => c.name);
 if (!retirementBalCols.includes('employer_contribution')) {
   db.exec('ALTER TABLE retirement_balances ADD COLUMN employer_contribution REAL');
+}
+
+// ---------- Migration: add goal-tracking columns for existing installs ----------
+const savingsAllocCols = db.prepare("PRAGMA table_info(savings_allocations)").all().map((c) => c.name);
+if (!savingsAllocCols.includes('target_amount')) {
+  db.exec('ALTER TABLE savings_allocations ADD COLUMN target_amount REAL');
+}
+const retirementAcctCols = db.prepare("PRAGMA table_info(retirement_accounts)").all().map((c) => c.name);
+if (!retirementAcctCols.includes('goal_type')) {
+  db.exec('ALTER TABLE retirement_accounts ADD COLUMN goal_type TEXT');
+}
+if (!retirementAcctCols.includes('goal_amount')) {
+  db.exec('ALTER TABLE retirement_accounts ADD COLUMN goal_amount REAL');
+}
+const debtCols = db.prepare("PRAGMA table_info(debts)").all().map((c) => c.name);
+if (!debtCols.includes('target_payoff_date')) {
+  db.exec('ALTER TABLE debts ADD COLUMN target_payoff_date TEXT');
 }
 
 // ---------- Migration: carry forward any old single-entry contributions into the new log ----------
@@ -583,11 +604,19 @@ app.post('/api/debts', requireAuth, (req, res) => {
   }
 });
 
+app.patch('/api/debts/:id', requireAuth, (req, res) => {
+  const { target_payoff_date } = req.body;
+  if (target_payoff_date !== undefined) {
+    db.prepare('UPDATE debts SET target_payoff_date = ? WHERE id = ?').run(target_payoff_date || null, req.params.id);
+  }
+  res.json({ ok: true });
+});
+
 app.get('/api/debts/balances/:year/:month', requireAuth, (req, res) => {
   const { year, month } = req.params;
   const rows = db
     .prepare(
-      `SELECT d.id AS debt_id, d.name, b.balance, b.note
+      `SELECT d.id AS debt_id, d.name, d.target_payoff_date, b.balance, b.note
        FROM debts d
        LEFT JOIN debt_balances b ON b.debt_id = d.id AND b.year = ? AND b.month = ?
        ORDER BY d.sort_order, d.name`
@@ -640,13 +669,14 @@ app.get('/api/retirement/accounts', requireAuth, (req, res) => {
 });
 
 app.post('/api/retirement/accounts', requireAuth, (req, res) => {
-  const { name, account_type } = req.body;
+  const { name, account_type, goal_type, goal_amount } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
+  const useGoalType = ['dollar', 'percent'].includes(goal_type) ? goal_type : null;
   try {
     const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM retirement_accounts').get().m;
     const info = db
-      .prepare('INSERT INTO retirement_accounts (name, account_type, is_default, sort_order) VALUES (?, ?, 0, ?)')
-      .run(name.trim(), account_type || null, maxOrder + 1);
+      .prepare('INSERT INTO retirement_accounts (name, account_type, goal_type, goal_amount, is_default, sort_order) VALUES (?, ?, ?, ?, 0, ?)')
+      .run(name.trim(), account_type || null, useGoalType, useGoalType ? (goal_amount ?? null) : null, maxOrder + 1);
     res.json({ id: info.lastInsertRowid, name: name.trim() });
   } catch (e) {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Account already exists' });
@@ -654,11 +684,22 @@ app.post('/api/retirement/accounts', requireAuth, (req, res) => {
   }
 });
 
+app.patch('/api/retirement/accounts/:id', requireAuth, (req, res) => {
+  const { goal_type, goal_amount } = req.body;
+  if (goal_type !== undefined) {
+    const useGoalType = ['dollar', 'percent'].includes(goal_type) ? goal_type : null;
+    db.prepare('UPDATE retirement_accounts SET goal_type = ? WHERE id = ?').run(useGoalType, req.params.id);
+    if (!useGoalType) db.prepare('UPDATE retirement_accounts SET goal_amount = NULL WHERE id = ?').run(req.params.id);
+  }
+  if (goal_amount !== undefined) db.prepare('UPDATE retirement_accounts SET goal_amount = ? WHERE id = ?').run(goal_amount, req.params.id);
+  res.json({ ok: true });
+});
+
 app.get('/api/retirement/balances/:year/:month', requireAuth, (req, res) => {
   const { year, month } = req.params;
   const rows = db
     .prepare(
-      `SELECT a.id AS account_id, a.name, a.account_type, b.balance, b.contribution, b.employer_contribution, b.note
+      `SELECT a.id AS account_id, a.name, a.account_type, a.goal_type, a.goal_amount, b.balance, b.contribution, b.employer_contribution, b.note
        FROM retirement_accounts a
        LEFT JOIN retirement_balances b ON b.account_id = a.id AND b.year = ? AND b.month = ?
        ORDER BY a.sort_order, a.name`
@@ -1037,19 +1078,20 @@ app.delete('/api/savings/withdrawal/:id', requireAuth, (req, res) => {
 });
 
 app.post('/api/savings/allocations', requireAuth, (req, res) => {
-  const { name, amount } = req.body;
+  const { name, amount, target_amount } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM savings_allocations').get().m;
   const info = db
-    .prepare('INSERT INTO savings_allocations (name, amount, sort_order) VALUES (?, ?, ?)')
-    .run(name.trim(), amount || 0, maxOrder + 1);
+    .prepare('INSERT INTO savings_allocations (name, amount, target_amount, sort_order) VALUES (?, ?, ?, ?)')
+    .run(name.trim(), amount || 0, target_amount ?? null, maxOrder + 1);
   res.json({ id: info.lastInsertRowid });
 });
 
 app.patch('/api/savings/allocations/:id', requireAuth, (req, res) => {
-  const { amount, name } = req.body;
+  const { amount, name, target_amount } = req.body;
   if (amount !== undefined) db.prepare('UPDATE savings_allocations SET amount = ? WHERE id = ?').run(amount, req.params.id);
   if (name !== undefined) db.prepare('UPDATE savings_allocations SET name = ? WHERE id = ?').run(name, req.params.id);
+  if (target_amount !== undefined) db.prepare('UPDATE savings_allocations SET target_amount = ? WHERE id = ?').run(target_amount, req.params.id);
   res.json({ ok: true });
 });
 
@@ -1058,7 +1100,7 @@ app.delete('/api/savings/allocations/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/networth', requireAuth, (req, res) => {
+function computeNetWorth() {
   const totalSaved = totalSavedAllTime();
 
   const dedicatedRow = db
@@ -1076,13 +1118,11 @@ app.get('/api/networth', requireAuth, (req, res) => {
   });
 
   const totalAssets = totalSaved + dedicatedActual;
-  res.json({
-    totalSaved,
-    dedicatedActual,
-    totalAssets,
-    totalDebt,
-    netWorth: totalAssets - totalDebt
-  });
+  return { totalSaved, dedicatedActual, totalAssets, totalDebt, netWorth: totalAssets - totalDebt };
+}
+
+app.get('/api/networth', requireAuth, (req, res) => {
+  res.json(computeNetWorth());
 });
 
 // ---------- Yearly review ----------
@@ -1357,6 +1397,121 @@ app.get('/api/widget/averages', requireWidgetKey, (req, res) => {
     avgExpense: totalExpense / monthCount,
     avgNet: (totalIncome - totalExpense) / monthCount,
     topCategories: expenseCategories.slice(0, 10)
+  });
+});
+
+// ---------- Goals overview (aggregates savings/retirement/debt goal fields) ----------
+app.get('/api/goals-overview', requireAuth, (req, res) => {
+  const now = new Date();
+  const curYear = now.getFullYear();
+
+  // Savings allocations with a target
+  const savingsGoals = db
+    .prepare('SELECT id, name, amount, target_amount FROM savings_allocations WHERE target_amount IS NOT NULL ORDER BY sort_order, id')
+    .all()
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      amount: a.amount,
+      target_amount: a.target_amount,
+      pct: a.target_amount > 0 ? Math.min((a.amount / a.target_amount) * 100, 999) : 0
+    }));
+
+  // Retirement accounts with a goal
+  const yearIncomeRow = db
+    .prepare(
+      `SELECT COALESCE(SUM(e.amount), 0) AS total FROM entries e JOIN categories c ON c.id = e.category_id
+       WHERE c.kind = 'income' AND e.year = ?`
+    )
+    .get(curYear);
+  const yearIncome = yearIncomeRow.total;
+
+  const retirementGoals = db
+    .prepare('SELECT id, name, goal_type, goal_amount FROM retirement_accounts WHERE goal_type IS NOT NULL ORDER BY sort_order, name')
+    .all()
+    .map((a) => {
+      const contribRow = db
+        .prepare(
+          `SELECT COALESCE(SUM(contribution), 0) AS c, COALESCE(SUM(employer_contribution), 0) AS e
+           FROM retirement_contributions WHERE account_id = ? AND year = ?`
+        )
+        .get(a.id, curYear);
+      const contributedThisYear = (contribRow.c || 0) + (contribRow.e || 0);
+      const actualPctOfIncome = yearIncome > 0 ? (contributedThisYear / yearIncome) * 100 : null;
+      const progressPct =
+        a.goal_type === 'dollar'
+          ? a.goal_amount > 0
+            ? Math.min((contributedThisYear / a.goal_amount) * 100, 999)
+            : 0
+          : a.goal_amount > 0 && actualPctOfIncome !== null
+          ? Math.min((actualPctOfIncome / a.goal_amount) * 100, 999)
+          : 0;
+      return {
+        account_id: a.id,
+        name: a.name,
+        goal_type: a.goal_type,
+        goal_amount: a.goal_amount,
+        contributed_this_year: contributedThisYear,
+        actual_pct_of_income: actualPctOfIncome,
+        progress_pct: progressPct
+      };
+    });
+
+  // Debts with a target payoff date
+  const debtGoals = db
+    .prepare('SELECT id, name, target_payoff_date FROM debts WHERE target_payoff_date IS NOT NULL ORDER BY sort_order, name')
+    .all()
+    .map((d) => {
+      const balRows = db
+        .prepare('SELECT year, month, balance FROM debt_balances WHERE debt_id = ? ORDER BY year, month')
+        .all(d.id);
+
+      if (balRows.length === 0) {
+        return { debt_id: d.id, name: d.name, target_payoff_date: d.target_payoff_date, current_balance: null, status: 'no_data' };
+      }
+
+      const current_balance = balRows[balRows.length - 1].balance;
+      let status = 'no_data';
+      let avg_monthly_paydown = null;
+      let projected_payoff_date = null;
+
+      if (current_balance <= 0) {
+        status = 'paid_off';
+      } else if (balRows.length >= 2) {
+        const first = balRows[0];
+        const last = balRows[balRows.length - 1];
+        const monthsSpan = (last.year - first.year) * 12 + (last.month - first.month);
+        if (monthsSpan > 0) {
+          avg_monthly_paydown = (first.balance - last.balance) / monthsSpan;
+          if (avg_monthly_paydown > 0) {
+            const monthsRemaining = current_balance / avg_monthly_paydown;
+            const projDate = new Date(now.getTime());
+            projDate.setMonth(projDate.getMonth() + Math.ceil(monthsRemaining));
+            projected_payoff_date = projDate.toISOString().slice(0, 10);
+            const targetDate = new Date(d.target_payoff_date + 'T00:00:00');
+            status = projDate <= targetDate ? 'on_track' : 'behind';
+          } else {
+            status = 'behind';
+          }
+        }
+      }
+
+      return {
+        debt_id: d.id,
+        name: d.name,
+        target_payoff_date: d.target_payoff_date,
+        current_balance,
+        avg_monthly_paydown,
+        projected_payoff_date,
+        status
+      };
+    });
+
+  res.json({
+    netWorth: computeNetWorth(),
+    savingsGoals,
+    retirementGoals,
+    debtGoals
   });
 });
 
