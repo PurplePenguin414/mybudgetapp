@@ -34,30 +34,80 @@
   document.head.appendChild(darkStyle);
 
   // ---------- Build nav bar ----------
-  var NAV_ITEMS = [
-    { href: 'index.html', icon: '🏠', label: 'Dashboard' },
-    { href: 'averages.html', icon: '📊', label: 'Averages' },
-    { href: 'debt.html', icon: '💳', label: 'Debt' },
-    { href: 'savings.html', icon: '💰', label: 'Savings' },
-    { href: 'retirement.html', icon: '🏦', label: 'Retirement' },
-    { href: 'goals.html', icon: '🎯', label: 'Goals' },
-    { href: 'yearly.html', icon: '📅', label: 'Yearly' },
-    { href: 'bills.html', icon: '🧾', label: 'Bills' }
+  var NAV_STRUCTURE = [
+    { type: 'link', href: 'index.html', icon: '🏠', label: 'Dashboard' },
+    { type: 'link', href: 'goals.html', icon: '🎯', label: 'Goals' },
+    { type: 'link', href: 'averages.html', icon: '📊', label: 'Averages' },
+    { type: 'link', href: 'yearly.html', icon: '📅', label: 'Yearly' },
+    {
+      type: 'dropdown',
+      icon: '💼',
+      label: 'Accounts',
+      items: [
+        { href: 'debt.html', icon: '💳', label: 'Debt' },
+        { href: 'savings.html', icon: '💰', label: 'Savings' },
+        { href: 'retirement.html', icon: '🏦', label: 'Retirement' },
+        { href: 'bills.html', icon: '🧾', label: 'Bills' }
+      ]
+    }
   ];
 
   var current = window.location.pathname.split('/').pop() || 'index.html';
+
+  function isGroupActive(items) {
+    return items.some(function (item) { return item.href === current; });
+  }
 
   var nav = document.createElement('nav');
   nav.className = 'topnav';
 
   var scrollArea = document.createElement('div');
   scrollArea.className = 'topnav-scroll';
-  scrollArea.innerHTML = NAV_ITEMS.map(function (item) {
-    var active = item.href === current ? ' active' : '';
-    return '<a href="' + item.href + '" class="topnav-item' + active + '">' +
-      '<span class="topnav-icon">' + item.icon + '</span>' +
-      '<span class="topnav-label">' + item.label + '</span></a>';
-  }).join('');
+
+  NAV_STRUCTURE.forEach(function (entry) {
+    if (entry.type === 'link') {
+      var active = entry.href === current ? ' active' : '';
+      var a = document.createElement('a');
+      a.href = entry.href;
+      a.className = 'topnav-item' + active;
+      a.innerHTML = '<span class="topnav-icon">' + entry.icon + '</span><span class="topnav-label">' + entry.label + '</span>';
+      scrollArea.appendChild(a);
+    } else {
+      var groupActive = isGroupActive(entry.items) ? ' active' : '';
+      var wrap = document.createElement('div');
+      wrap.className = 'topnav-dropdown-wrap';
+
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'topnav-item topnav-dropdown-btn' + groupActive;
+      btn.innerHTML = '<span class="topnav-icon">' + entry.icon + '</span><span class="topnav-label">' + entry.label + '</span><span class="topnav-caret">▾</span>';
+
+      var menu = document.createElement('div');
+      menu.className = 'topnav-dropdown-menu';
+      menu.innerHTML = entry.items.map(function (item) {
+        var itemActive = item.href === current ? ' active' : '';
+        return '<a href="' + item.href + '" class="topnav-dropdown-item' + itemActive + '">' +
+          '<span class="topnav-icon">' + item.icon + '</span>' +
+          '<span class="topnav-label">' + item.label + '</span></a>';
+      }).join('');
+
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var wasOpen = menu.classList.contains('open');
+        document.querySelectorAll('.topnav-dropdown-menu.open').forEach(function (m) { m.classList.remove('open'); });
+        if (!wasOpen) menu.classList.add('open');
+      });
+
+      wrap.appendChild(btn);
+      wrap.appendChild(menu);
+      scrollArea.appendChild(wrap);
+    }
+  });
+
+  document.addEventListener('click', function () {
+    document.querySelectorAll('.topnav-dropdown-menu.open').forEach(function (m) { m.classList.remove('open'); });
+  });
+
   nav.appendChild(scrollArea);
 
   var toggleBtn = document.createElement('button');
