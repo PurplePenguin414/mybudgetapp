@@ -924,7 +924,7 @@ app.get('/api/targets/:year/:month', requireAuth, (req, res) => {
   const { year, month } = req.params;
   const rows = db
     .prepare(
-      `SELECT c.id AS category_id, c.name AS category_name, t.amount
+      `SELECT c.id AS category_id, c.name AS category_name, c.budget_bucket, t.amount
        FROM categories c
        LEFT JOIN targets t ON t.category_id = c.id AND t.year = ? AND t.month = ?
        WHERE c.kind = 'expense'
