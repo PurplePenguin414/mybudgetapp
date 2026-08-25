@@ -392,24 +392,32 @@ async function renderTargets(entries) {
 
   let totalTarget = 0;
   let totalActual = 0;
+  let totalTargetNonSavings = 0;
+  let totalActualNonSavings = 0;
   data.targets.forEach((t) => {
     if (t.amount) totalTarget += t.amount;
     totalActual += actuals[t.category_id] || 0;
+    if (t.budget_bucket !== 'savings') {
+      if (t.amount) totalTargetNonSavings += t.amount;
+      totalActualNonSavings += actuals[t.category_id] || 0;
+    }
   });
-  const totalOver = totalTarget > 0 && totalActual > totalTarget;
+  const totalOver = totalTargetNonSavings > 0 && totalActualNonSavings > totalTargetNonSavings;
 
   const rowsHtml = data.targets
     .map((t) => {
       const actual = actuals[t.category_id] || 0;
       const target = t.amount;
       const pct = target ? Math.min((actual / target) * 100, 100) : 0;
-      const over = target && actual > target;
-      const color = !target ? 'var(--surface2)' : over ? 'var(--red)' : 'var(--blue)';
+      const isSavings = t.budget_bucket === 'savings';
+      const over = target && actual > target && !isSavings;
+      const exceededSavings = target && actual > target && isSavings;
+      const color = !target ? 'var(--surface2)' : over ? 'var(--red)' : exceededSavings ? 'var(--green)' : 'var(--blue)';
       return `
       <div class="target-row">
         <div class="target-name">${t.category_name}</div>
         <div class="target-track"><div class="target-fill" style="width:${pct}%;background:${color}"></div></div>
-        <div class="target-actual" style="color:${over ? 'var(--red)' : 'var(--text)'}">${fmt(actual)}</div>
+        <div class="target-actual" style="color:${over ? 'var(--red)' : exceededSavings ? 'var(--green)' : 'var(--text)'}">${fmt(actual)}</div>
         <div class="target-input-wrap">
           <span>of $</span>
           <input type="number" step="0.01" min="0" data-category-id="${t.category_id}" value="${target !== null ? target : ''}" placeholder="—" />
