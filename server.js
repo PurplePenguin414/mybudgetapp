@@ -361,6 +361,15 @@ if (!hasSavingsCat) {
 // ---------- App setup ----------
 const app = express();
 app.use(express.json());
+
+// All API responses are dynamic and user-specific — never let the browser
+// cache or conditionally-revalidate them (avoids stale 304 responses after
+// a write, e.g. marking a bill as charged not showing up on next fetch).
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 app.use(
   session({
     secret: SESSION_SECRET,
