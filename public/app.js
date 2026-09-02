@@ -11,7 +11,8 @@ const state = {
 const PIE_COLORS = ['#2761a0','#c94235','#2a8a5f','#b87318','#7a5ea8','#c9598a','#4a9d9c','#9a8a3a','#a05e27','#6a7a3a','#8a6a8a','#3a6a8a','#a03a3a','#6a8a5a'];
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const fmt = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const fmt = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtRound = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
 // ---------- Auth ----------
 async function checkSession() {
@@ -204,7 +205,7 @@ function renderSnapshot(entries) {
     <div class="bar-row">
       <div class="bar-label">${name}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${(amt / max) * 100}%;background:var(--blue)"></div></div>
-      <div class="bar-amt">${fmt(amt)} <span style="color:var(--muted)">(${((amt / total) * 100).toFixed(0)}%)</span></div>
+      <div class="bar-amt">${fmtRound(amt)} <span style="color:var(--muted)">(${((amt / total) * 100).toFixed(0)}%)</span></div>
     </div>`
     )
     .join('');
@@ -212,7 +213,7 @@ function renderSnapshot(entries) {
     <div class="bar-row" style="border-top:1.5px solid var(--border); padding-top:12px; margin-top:4px;">
       <div class="bar-label" style="font-weight:600;">Total</div>
       <div class="bar-track" style="visibility:hidden;"></div>
-      <div class="bar-amt" style="font-weight:600;">${fmt(total)}</div>
+      <div class="bar-amt" style="font-weight:600;">${fmtRound(total)}</div>
     </div>`;
   container.innerHTML = rowsHtml + totalHtml;
 
@@ -246,7 +247,7 @@ function renderExpensePie(sorted) {
         legend: { position: 'right', labels: { boxWidth: 12, font: { family: 'DM Sans', size: 11 }, color: isDark ? '#ffffff' : undefined } },
         tooltip: {
           callbacks: {
-            label: (ctx) => `${ctx.label.split(' (')[0]}: ${fmt(ctx.raw)} (${((ctx.raw / total) * 100).toFixed(0)}%)`
+            label: (ctx) => `${ctx.label.split(' (')[0]}: ${fmtRound(ctx.raw)} (${((ctx.raw / total) * 100).toFixed(0)}%)`
           }
         }
       }
@@ -461,17 +462,14 @@ async function renderMomTable(currentEntries) {
   const prevData = await res.json();
 
   const curTotals = {};
-  const bucketByName = {};
   currentEntries.forEach((e) => {
     const key = e.category_name + '|' + e.kind;
     curTotals[key] = (curTotals[key] || 0) + e.amount;
-    if (e.budget_bucket) bucketByName[e.category_name] = e.budget_bucket;
   });
   const prevTotals = {};
   prevData.entries.forEach((e) => {
     const key = e.category_name + '|' + e.kind;
     prevTotals[key] = (prevTotals[key] || 0) + e.amount;
-    if (e.budget_bucket) bucketByName[e.category_name] = e.budget_bucket;
   });
 
   const allKeys = Array.from(new Set([...Object.keys(curTotals), ...Object.keys(prevTotals)]));
@@ -490,9 +488,7 @@ async function renderMomTable(currentEntries) {
       if (prev > 0) {
         const pct = ((cur - prev) / prev) * 100;
         changeLabel = (pct >= 0 ? '+' : '') + pct.toFixed(0) + '%';
-        // Income and Savings/Investing both work like income here — more is the good direction.
-        const actsLikeIncome = kind === 'income' || bucketByName[name] === 'savings';
-        const improved = actsLikeIncome ? pct >= 0 : pct <= 0;
+        const improved = kind === 'income' ? pct >= 0 : pct <= 0;
         color = pct === 0 ? 'var(--muted)' : improved ? 'var(--green)' : 'var(--red)';
       } else if (cur > 0) {
         changeLabel = 'new';

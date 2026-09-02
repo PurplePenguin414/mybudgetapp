@@ -1,6 +1,6 @@
 const state = { year: new Date().getFullYear(), chart: null };
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const fmt = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const fmt = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 async function checkSession() {
   const res = await fetch('/api/session');

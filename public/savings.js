@@ -1,4 +1,4 @@
-const fmt = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const fmt = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 async function checkSession() {

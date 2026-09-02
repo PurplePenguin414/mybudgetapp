@@ -1,4 +1,5 @@
-const fmt = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const fmt = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtRound = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const PIE_COLORS = ['#2761a0','#c94235','#2a8a5f','#b87318','#7a5ea8','#c9598a','#4a9d9c','#9a8a3a','#a05e27','#6a7a3a','#8a6a8a','#3a6a8a','#a03a3a','#6a8a5a'];
 
 async function checkSessionAndLoad() {
@@ -101,7 +102,7 @@ function renderExpenseBars(expense) {
     <div class="bar-row">
       <div class="bar-label">${e.category}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${(e.avg / max) * 100}%;background:var(--blue)"></div></div>
-      <div class="bar-amt">${fmt(e.avg)} <span style="color:var(--muted)">(${((e.avg / total) * 100).toFixed(0)}%)</span></div>
+      <div class="bar-amt">${fmtRound(e.avg)} <span style="color:var(--muted)">(${((e.avg / total) * 100).toFixed(0)}%)</span></div>
     </div>`
     )
     .join('');
@@ -109,7 +110,7 @@ function renderExpenseBars(expense) {
     <div class="bar-row" style="border-top:1.5px solid var(--border); padding-top:12px; margin-top:4px;">
       <div class="bar-label" style="font-weight:600;">Total</div>
       <div class="bar-track" style="visibility:hidden;"></div>
-      <div class="bar-amt" style="font-weight:600;">${fmt(total)}</div>
+      <div class="bar-amt" style="font-weight:600;">${fmtRound(total)}</div>
     </div>`;
   container.innerHTML = rowsHtml + totalHtml;
 }
@@ -171,7 +172,7 @@ function renderExpensePie(expense) {
         legend: { position: 'right', labels: { boxWidth: 12, font: { family: 'DM Sans', size: 11 }, color: isDark ? '#ffffff' : undefined } },
         tooltip: {
           callbacks: {
-            label: (ctx) => `${ctx.label.split(' (')[0]}: ${fmt(ctx.raw)} (${((ctx.raw / total) * 100).toFixed(0)}%)`
+            label: (ctx) => `${ctx.label.split(' (')[0]}: ${fmtRound(ctx.raw)} (${((ctx.raw / total) * 100).toFixed(0)}%)`
           }
         }
       }
