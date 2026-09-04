@@ -1227,6 +1227,19 @@ function computeBillDueInfo(bill) {
     if (candidate < today) {
       candidate = new Date(year, monthIndex + 1, clampDayToMonth(year, monthIndex + 1, bill.fixed_day));
     }
+
+    // If "mark charged today" was clicked for this same upcoming cycle
+    // (same year/month as the candidate due date), treat that cycle as
+    // already handled and skip forward to the following one.
+    if (bill.last_charged_date) {
+      const lastCharged = new Date(bill.last_charged_date + 'T00:00:00');
+      if (lastCharged.getFullYear() === candidate.getFullYear() && lastCharged.getMonth() === candidate.getMonth()) {
+        const skipYear = candidate.getFullYear();
+        const skipMonthIndex = candidate.getMonth() + 1;
+        candidate = new Date(skipYear, skipMonthIndex, clampDayToMonth(skipYear, skipMonthIndex, bill.fixed_day));
+      }
+    }
+
     const days_until = Math.round((candidate.getTime() - today.getTime()) / 86400000);
     return { next_due_date: candidate.toISOString().slice(0, 10), days_until };
   }
