@@ -498,23 +498,32 @@ async function renderMomTable(currentEntries) {
     })
     .sort((a, b) => b.cur - a.cur);
 
+  const expenseRows = rows.filter((r) => r.kind !== 'income');
+  const incomeRows = rows.filter((r) => r.kind === 'income');
+
+  const rowHtml = (r) => `
+        <tr>
+          <td>${r.name}</td>
+          <td class="num">${fmt(r.cur)}</td>
+          <td class="num">${fmt(r.prev)}</td>
+          <td class="num" style="color:${r.color}">${r.changeLabel}</td>
+        </tr>`;
+
+  const groupHtml = (label, groupRows) => {
+    if (groupRows.length === 0) return '';
+    return `
+        <tr class="mom-group-header"><td colspan="4">${label}</td></tr>
+        ${groupRows.map(rowHtml).join('')}`;
+  };
+
   container.innerHTML = `
     <table class="mom">
       <thead>
         <tr><th>Category</th><th style="text-align:right">This month</th><th style="text-align:right">Last month</th><th style="text-align:right">Change</th></tr>
       </thead>
       <tbody>
-        ${rows
-          .map(
-            (r) => `
-        <tr>
-          <td>${r.name}</td>
-          <td class="num">${fmt(r.cur)}</td>
-          <td class="num">${fmt(r.prev)}</td>
-          <td class="num" style="color:${r.color}">${r.changeLabel}</td>
-        </tr>`
-          )
-          .join('')}
+        ${groupHtml('Expenses', expenseRows)}
+        ${groupHtml('Income', incomeRows)}
       </tbody>
     </table>`;
 }

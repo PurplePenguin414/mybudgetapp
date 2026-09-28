@@ -117,6 +117,10 @@ function renderAllocations(allocations, unallocated) {
       return `
     <div class="alloc-row-wrap">
       <div class="alloc-row">
+        <div class="alloc-input-wrap">
+          <span>priority</span>
+          <input type="number" step="1" data-field="priority" data-id="${a.id}" value="${a.priority || 0}" style="width:56px;" title="Lower number = higher priority. Ties keep their current order." />
+        </div>
         <div class="alloc-name">${a.name}</div>
         <div class="alloc-input-wrap">
           <span>$</span>
@@ -149,6 +153,9 @@ function renderAllocations(allocations, unallocated) {
       let value;
       if (field === 'target_amount') {
         value = raw.trim() === '' ? null : parseFloat(raw);
+      } else if (field === 'priority') {
+        value = raw.trim() === '' ? 0 : parseInt(raw, 10);
+        if (isNaN(value)) return;
       } else {
         value = parseFloat(raw);
         if (isNaN(value) || value < 0) return;

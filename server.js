@@ -105,7 +105,8 @@ CREATE TABLE IF NOT EXISTS savings_allocations (
   name TEXT NOT NULL,
   amount REAL NOT NULL DEFAULT 0,
   target_amount REAL,
-  sort_order INTEGER NOT NULL DEFAULT 0
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  priority INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS savings_withdrawals (
@@ -176,6 +177,9 @@ if (!retirementBalCols.includes('employer_contribution')) {
 const savingsAllocCols = db.prepare("PRAGMA table_info(savings_allocations)").all().map((c) => c.name);
 if (!savingsAllocCols.includes('target_amount')) {
   db.exec('ALTER TABLE savings_allocations ADD COLUMN target_amount REAL');
+}
+if (!savingsAllocCols.includes('priority')) {
+  db.exec('ALTER TABLE savings_allocations ADD COLUMN priority INTEGER NOT NULL DEFAULT 0');
 }
 const retirementAcctCols = db.prepare("PRAGMA table_info(retirement_accounts)").all().map((c) => c.name);
 if (!retirementAcctCols.includes('goal_type')) {
@@ -1061,7 +1065,7 @@ function totalSavedAllTime() {
 
 app.get('/api/savings/summary', requireAuth, (req, res) => {
   const totalSaved = totalSavedAllTime();
-  const allocations = db.prepare('SELECT * FROM savings_allocations ORDER BY sort_order, id').all();
+  const allocations = db.prepare('SELECT * FROM savings_allocations ORDER BY priority, sort_order, id').all();
   const allocated = allocations.reduce((s, a) => s + a.amount, 0);
   const withdrawals = db
     .prepare('SELECT * FROM savings_withdrawals ORDER BY year DESC, month DESC, created_at DESC')
@@ -1087,20 +1091,21 @@ app.delete('/api/savings/withdrawal/:id', requireAuth, (req, res) => {
 });
 
 app.post('/api/savings/allocations', requireAuth, (req, res) => {
-  const { name, amount, target_amount } = req.body;
+  const { name, amount, target_amount, priority } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM savings_allocations').get().m;
   const info = db
-    .prepare('INSERT INTO savings_allocations (name, amount, target_amount, sort_order) VALUES (?, ?, ?, ?)')
-    .run(name.trim(), amount || 0, target_amount ?? null, maxOrder + 1);
+    .prepare('INSERT INTO savings_allocations (name, amount, target_amount, sort_order, priority) VALUES (?, ?, ?, ?, ?)')
+    .run(name.trim(), amount || 0, target_amount ?? null, maxOrder + 1, Number.isFinite(priority) ? priority : 0);
   res.json({ id: info.lastInsertRowid });
 });
 
 app.patch('/api/savings/allocations/:id', requireAuth, (req, res) => {
-  const { amount, name, target_amount } = req.body;
+  const { amount, name, target_amount, priority } = req.body;
   if (amount !== undefined) db.prepare('UPDATE savings_allocations SET amount = ? WHERE id = ?').run(amount, req.params.id);
   if (name !== undefined) db.prepare('UPDATE savings_allocations SET name = ? WHERE id = ?').run(name, req.params.id);
   if (target_amount !== undefined) db.prepare('UPDATE savings_allocations SET target_amount = ? WHERE id = ?').run(target_amount, req.params.id);
+  if (priority !== undefined) db.prepare('UPDATE savings_allocations SET priority = ? WHERE id = ?').run(Number.isFinite(priority) ? priority : 0, req.params.id);
   res.json({ ok: true });
 });
 
@@ -1429,7 +1434,7 @@ app.get('/api/goals-overview', requireAuth, (req, res) => {
 
   // Savings allocations with a target
   const savingsGoals = db
-    .prepare('SELECT id, name, amount, target_amount FROM savings_allocations WHERE target_amount IS NOT NULL ORDER BY sort_order, id')
+    .prepare('SELECT id, name, amount, target_amount FROM savings_allocations WHERE target_amount IS NOT NULL ORDER BY priority, sort_order, id')
     .all()
     .map((a) => ({
       id: a.id,
