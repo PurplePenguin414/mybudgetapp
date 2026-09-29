@@ -11,3 +11,10 @@ services:
       - ./data:/app/data
     env_file:
       - .env
+    networks:
+      - default
+      - apps-net
+
+networks:
+  apps-net:
+    external: true
